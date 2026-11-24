@@ -25,6 +25,16 @@ main{padding:12px;display:grid;grid-template-columns:repeat(auto-fill,minmax(180
 .votes{display:flex;gap:4px;padding:6px 8px;font-size:12px;color:var(--mut);min-height:26px;flex-wrap:wrap}
 .votes span{background:var(--line);border-radius:6px;padding:1px 6px}
 .hidden{display:none}
+.ver{position:absolute;top:6px;left:6px;background:rgba(0,0,0,.65);color:#fff;border:0;border-radius:6px;padding:3px 8px;font:12px system-ui,sans-serif;cursor:pointer}
+.lb{position:fixed;inset:0;background:rgba(0,0,0,.92);z-index:10;display:flex;align-items:center;justify-content:center}
+.lb[hidden]{display:none}
+.lb img{max-width:96vw;max-height:86vh;object-fit:contain}
+.lbbtn{position:absolute;background:rgba(255,255,255,.15);color:#fff;border:0;border-radius:8px;padding:8px 14px;font-size:20px;cursor:pointer}
+#lbX{top:12px;right:12px}
+#lbPrev{left:12px;top:50%}
+#lbNext{right:12px;top:50%}
+.lbbar{position:absolute;bottom:12px;left:0;right:0;display:flex;justify-content:center;gap:12px;align-items:center;color:#fff;flex-wrap:wrap;padding:0 12px}
+#lbVote{background:var(--acc);color:#fff;border:0;border-radius:8px;padding:8px 14px;font:inherit;cursor:pointer}
 .hint{padding:0 16px 16px;color:var(--mut);font-size:13px}
 </style>
 </head>
@@ -45,11 +55,19 @@ main{padding:12px;display:grid;grid-template-columns:repeat(auto-fill,minmax(180
 </header>
 <main id="grid"></main>
 <p class="hint">Elige quién vota arriba y toca cada foto para marcarla o desmarcarla para esa persona. Los votos se guardan en este navegador.</p>
+<div id="lb" class="lb" hidden>
+  <button id="lbX" class="lbbtn" aria-label="Cerrar">✕</button>
+  <button id="lbPrev" class="lbbtn" aria-label="Anterior">‹</button>
+  <img id="lbImg" alt="">
+  <button id="lbNext" class="lbbtn" aria-label="Siguiente">›</button>
+  <div class="lbbar"><span id="lbName"></span><button id="lbVote"></button></div>
+</div>
 <script src="photos.js"></script>
 <script>
 (function(){
   var KEY = 'rgc2025-votos';
   var filter = 'all';
+  var shownList = [];
   var votes = {};
   try { votes = JSON.parse(localStorage.getItem(KEY) || '{}') || {}; } catch(e) { votes = {}; }
   var grid = document.getElementById('grid');
@@ -77,6 +95,52 @@ main{padding:12px;display:grid;grid-template-columns:repeat(auto-fill,minmax(180
     });
   }
 
+  function toggleVote(file){
+    votes[file] = votes[file] || {};
+    votes[file][current] = !votes[file][current];
+    if (!votes[file][current]) delete votes[file][current];
+    if (!Object.keys(votes[file]).length) delete votes[file];
+    save(); render();
+  }
+
+  // visor grande
+  var lbIdx = 0;
+  function showLB(){
+    var file = shownList[lbIdx];
+    if (!file) return;
+    document.getElementById('lbImg').src = 'fotos/' + file;
+    document.getElementById('lbName').textContent = file + ' · ' + (lbIdx + 1) + ' / ' + shownList.length;
+    var on = votes[file] && votes[file][current];
+    document.getElementById('lbVote').textContent = on ? 'Quitar mi voto (' + nameOf(current) + ')' : 'Votar: ' + nameOf(current);
+  }
+  function openLB(file){
+    var i = shownList.indexOf(file);
+    if (i < 0) return;
+    lbIdx = i;
+    showLB();
+    document.getElementById('lb').hidden = false;
+  }
+  function closeLB(){
+    document.getElementById('lb').hidden = true;
+    document.getElementById('lbImg').removeAttribute('src');
+  }
+  function stepLB(d){
+    if (!shownList.length) return;
+    lbIdx = (lbIdx + d + shownList.length) % shownList.length;
+    showLB();
+  }
+  document.getElementById('lbX').addEventListener('click', closeLB);
+  document.getElementById('lbPrev').addEventListener('click', function(){ stepLB(-1); });
+  document.getElementById('lbNext').addEventListener('click', function(){ stepLB(1); });
+  document.getElementById('lbVote').addEventListener('click', function(){ toggleVote(shownList[lbIdx]); showLB(); });
+  document.addEventListener('keydown', function(e){
+    if (document.getElementById('lb').hidden) return;
+    if (e.key === 'Escape') closeLB();
+    else if (e.key === 'ArrowLeft') stepLB(-1);
+    else if (e.key === 'ArrowRight') stepLB(1);
+    else if (e.key === ' ') { e.preventDefault(); toggleVote(shownList[lbIdx]); showLB(); }
+  });
+
   function whoVoted(file){
     var out = [];
     for (var i = 0; i < 4; i++) if (votes[file] && votes[file][i]) out.push(nameOf(i));
@@ -86,6 +150,7 @@ main{padding:12px;display:grid;grid-template-columns:repeat(auto-fill,minmax(180
   function render(){
     refreshVoterBtns();
     grid.innerHTML = '';
+    shownList = [];
     var shown = 0, total = 0, votedCount = 0;
     FOTOS.forEach(function(file){
       var who = whoVoted(file);
@@ -95,12 +160,13 @@ main{padding:12px;display:grid;grid-template-columns:repeat(auto-fill,minmax(180
       total++;
       if (!show) return;
       shown++;
+      shownList.push(file);
       var card = document.createElement('div');
       card.className = 'card' + (votes[file] && votes[file][current] ? ' sel' : '');
       var img = document.createElement('img');
       img.loading = 'lazy';
       img.alt = file;
-      img.src = 'fotos/' + file;
+      img.src = 'miniaturas/' + file;
       var badge = document.createElement('div');
       badge.className = 'badge';
       badge.textContent = n;
@@ -108,13 +174,12 @@ main{padding:12px;display:grid;grid-template-columns:repeat(auto-fill,minmax(180
       vs.className = 'votes';
       who.forEach(function(w){ var s = document.createElement('span'); s.textContent = w; vs.appendChild(s); });
       card.appendChild(img); card.appendChild(badge); card.appendChild(vs);
-      card.addEventListener('click', function(){
-        votes[file] = votes[file] || {};
-        votes[file][current] = !votes[file][current];
-        if (!votes[file][current]) delete votes[file][current];
-        if (!Object.keys(votes[file]).length) delete votes[file];
-        save(); render();
-      });
+      card.addEventListener('click', function(){ toggleVote(file); });
+      var ver = document.createElement('button');
+      ver.className = 'ver';
+      ver.textContent = 'Ver';
+      ver.addEventListener('click', function(e){ e.stopPropagation(); openLB(file); });
+      card.appendChild(ver);
       grid.appendChild(card);
     });
     countEl.textContent = votedCount + ' con votos · ' + shown + ' mostradas de ' + total;
